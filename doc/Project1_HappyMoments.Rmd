@@ -1,0 +1,380 @@
+---
+title: 'Golden Years Glow: Navigating Retirement Happiness in the HappyDB Saga'
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    latex_engine: pdflatex
+    keep_tex: yes
+    fig_caption: yes
+    html_document: default
+---
+
+![ ](../figs/retire.png)
+\newline
+As the discourse on the mental health of the elderly gains prominence, I delve into the HappyDB dataset to unravel the nuanced elements that contribute to the happiness of elderly individuals during their retirement years. Retirement is a significant life transition, often accompanied by various challenges and opportunities. Understanding the sources of joy during this period can provide valuable insights into the well-being of retired individuals and offer guidance on fostering a happier retirement.This exploration is not merely an academic pursuit; it's a deeply personal quest fueled by a concern for the well-being of my own grandparents.
+
+```{r load libraries, warning=FALSE, message=FALSE}
+library(tm)
+library(tidytext)
+library(tidyverse)
+library(DT)
+library(scales)
+library(gridExtra)
+library(ngram)
+```
+
+
+```{r read data, warning=FALSE, message=FALSE}
+urlfile<-'https://raw.githubusercontent.com/rit-public/HappyDB/master/happydb/data/cleaned_hm.csv'
+hm_data <- read_csv(urlfile)
+```
+
+```{r text processing in tm, warning=FALSE, message=FALSE}
+corpus <- VCorpus(VectorSource(hm_data$cleaned_hm))%>%
+  tm_map(content_transformer(tolower))%>%
+  tm_map(removePunctuation)%>%  
+  tm_map(removeNumbers)%>%
+  tm_map(removeWords, character(0))%>%
+  tm_map(stripWhitespace)
+```
+
+```{r stemming, warning=FALSE, message=FALSE}
+stemmed <- tm_map(corpus, stemDocument) %>%
+  tidy() %>%
+  select(text)
+```
+
+```{r tidy dictionary, warning=FALSE, message=FALSE}
+dict <- tidy(corpus) %>%
+  select(text) %>%
+  unnest_tokens(dictionary, text)
+```
+
+
+
+
+```{r stopwords, warning=FALSE, message=FALSE}
+data("stop_words")
+
+word <- c("happy","ago","yesterday","lot","today","months","month",
+                 "happier","happiest","last","week","past","im")
+
+stop_words <- stop_words %>%
+  bind_rows(mutate(tibble(word), lexicon = "updated"))
+```
+
+
+```{r tidy stems with dictionary, warning=FALSE, message=FALSE}
+completed <- stemmed %>%
+  mutate(id = row_number()) %>%
+  unnest_tokens(stems, text) %>%
+  bind_cols(dict) %>%
+  anti_join(stop_words, by = c("dictionary" = "word"))
+```
+
+```{r stem completion, warning=FALSE, message=FALSE}
+completed <- completed %>%
+  group_by(stems) %>%
+  count(dictionary) %>%
+  mutate(word = dictionary[which.max(n)]) %>%
+  ungroup() %>%
+  select(stems, word) %>%
+  distinct() %>%
+  right_join(completed) %>%
+  select(-stems)
+```
+
+
+```{r reverse unnest, warning=FALSE, message=FALSE}
+completed <- completed %>%
+  group_by(id) %>%
+  summarise(text = str_c(word, collapse = " ")) %>%
+  ungroup()
+```
+
+
+```{r cleaned hm_data, warning=FALSE, message=FALSE}
+hm_data <- hm_data %>%
+  mutate(id = row_number()) %>%
+  inner_join(completed)
+
+datatable(hm_data)
+```
+
+
+
+```{r export data, warning=FALSE, message=FALSE}
+write_csv(hm_data, "../output/processed_moments.csv")
+```
+
+
+
+Initially, I preprocess the unrefined text data found in the 'cleaned_hm.csv' file within the 'data' directory. This involves data cleaning, elimination of stopwords, and the creation of a structured and organized version of the text, which is subsequently stored in the 'output' directory.
+
+Following this, I merge the processed textual information with demographic details from the 'demographic.csv' file, also located in the 'data' directory. This combined dataset serves as the foundation for the analysis.
+
+```{r, message=FALSE,echo=FALSE}
+# We use the processed data for our analysis and combine it with the demographic information available.
+
+hm_data <- read_csv("../output/processed_moments.csv")
+urlfile<-'../data/demographic.csv'
+demo_data <- read_csv(urlfile)
+
+
+```
+
+```{r,, message=FALSE,echo=FALSE}
+hm_data <- hm_data %>%
+  inner_join(demo_data, by = "wid") %>%
+  select(wid,
+         original_hm,
+         gender, 
+         marital, 
+         parenthood,
+         reflection_period,
+         age, 
+         country, 
+         ground_truth_category, 
+         predicted_category,
+         text) %>%
+  mutate(count = sapply(hm_data$text, wordcount)) %>%
+  filter(gender %in% c("m", "f")) %>%
+  filter(marital %in% c("single", "married","divorced","separated","widowed")) %>%
+  filter(parenthood %in% c("n", "y")) %>%
+  filter(reflection_period %in% c("24h", "3m")) %>%
+  filter(age > 65) %>%
+  mutate(reflection_period = fct_recode(reflection_period, 
+                                        months_3 = "3m", hours_24 = "24h"))
+
+
+
+
+```
+
+Initially, let's examine the age distribution. The age range spans from 2 to 98, with the exclusion of ages over 200, as they were deemed inaccurate. For the focus of this analysis, individuals aged over 65 have been selected, given that, in general, this age marks the period of retirement for most individuals.
+```{r, message=FALSE,echo=FALSE}
+library(ggplot2)
+#Some preparation doing before the analysis
+# Create a histogram of ages
+ggplot(demo_data, aes(x = age)) +
+  geom_histogram(binwidth = 5, fill = "blue", color = "black") +
+  labs(title = "Distribution of Ages", x = "Age", y = "Frequency")+xlim(2, 98)
+```
+
+
+
+## Question 1: What Makes the Elderly Happy During Their Retirement Period?
+Now, let's use wordcloud to see the big picture of happyness of the elderly. 
+```{r, message=FALSE,echo=FALSE}
+# Filter for individuals over 65
+hm_data_over_65 <- hm_data[hm_data$age > 65,]
+
+# Tokenize the text data for individuals over 65
+bag_of_words_over_65 <-  hm_data_over_65 %>%
+  unnest_tokens(word, text)
+
+# Count word frequencies
+word_count_over_65 <- bag_of_words_over_65 %>%
+  count(word, sort = TRUE)
+
+# Create a word cloud
+if (!requireNamespace("wordcloud2", quietly = TRUE)) {
+  install.packages("wordcloud2")
+}
+library(wordcloud2)
+
+# Create a data frame for wordcloud2
+
+# Create the word cloud using wordcloud2
+wordcloud2(word_count_over_65, size = 0.6, rotateRatio = 0)
+
+
+```
+
+It is evident that terms such as "wife," "day," "friend," "daughter," "son," "time," play a significant role in the happiness of individuals during their retirement years. These findings align with common perceptions of elderly individuals finding joy in spending more time with family and enjoying various aspects of life after leaving the workforce. The increased emphasis on relationships and the availability of time for leisure and meaningful activities contribute positively to the overall well-being of retirees. 
+
+
+## Question 2:Does the contribution to happiness for the elderly vary by region?
+
+Taking a broader perspective, let's move on to another question: Does the contribution to happiness vary by region? To explore this, we'll begin by examining a pie chart depicting the distribution of continents in the dataset.I split the countries in to five continents as follows:
+
+
+```{r}
+# Asian countries
+asian_countries <- c("AFG", "ARM", "BGD", "IND", "IDN", "IRQ", "ISR", "JPN", "KAZ", "KWT", "MAC", "MYS", "NPL", "PAK", "PHL", "RUS", "SAU", "SGP", "KOR", "LKA", "TWN", "THA", "TUR", "ARE", "VNM")
+
+# European countries
+european_countries <- c("ALB", "AUT", "BEL", "BGR", "HRV", "CYP", "CZE", "DNK", "EST", "FIN", "FRA", "DEU", "GRC", "ISL", "IRL", "ITA", "KAZ", "LVA", "LTU", "MLT", "MDA", "NLD", "MKD", "NOR", "POL", "PRT", "ROU", "SRB", "SVN", "ESP", "SWE", "UKR", "GBR")
+
+# North American countries
+north_american_countries <- c("BHS", "BRB", "CAN", "CRI", "DOM", "JAM", "MEX", "PRI", "TTO", "TCA", "USA", "UMI", "VIR")
+
+# South American countries
+south_american_countries <- c("ARG", "BRA", "CHL", "COL", "ECU", "PER", "SUR", "URY", "VEN")
+
+# Oceanian countries
+oceania_countries <- c("ASM", "AUS", "NZL")
+
+# Add a new column for continent
+hm_data_over_65$continent <- ifelse(hm_data_over_65$country %in% asian_countries, "Asia",
+                           ifelse(hm_data_over_65$country %in% european_countries, "Europe",
+                           ifelse(hm_data_over_65$country %in% north_american_countries, "North America",
+                           ifelse(hm_data_over_65$country %in% south_american_countries, "South America",
+                           ifelse(hm_data_over_65$country %in% oceania_countries, "Oceania", "Other")))))
+
+# Aggregate counts by continent
+continent_dist <- hm_data_over_65 %>%
+  group_by(continent) %>%
+  summarise(total_count = n(), .groups = 'drop') %>%
+  as.data.frame()
+
+# Create a pie chart for continents
+ggplot(continent_dist, aes(x = "", y = total_count, fill = continent)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = 'y') +
+  labs(title = "Count of Countries in Happy Moments Dataset by Continent")
+
+```
+The pie chart reveals that the majority of the data originates from North America. Unfortunately, data for regions other than North America and Asia is insufficient for drawing conclusions about their contribution to happiness. Consequently, we'll focus our analysis on comparing Asia and North America based on the available data.
+
+```{r, message=FALSE,echo=FALSE}
+
+asian_countries_codes <- c("VNM", "THA", "IND", "CHN", "JPN", "KOR", "MYS", "SGP", "PHL", "IDN", "MMR", "KHM", "LKA", "PAK", "BGD", "NPL", "BTN", "MDV", "NPL", "LAO", "BRN", "TLS")
+
+# Filter the data for Asian countries
+asian_data <- hm_data_over_65[hm_data_over_65$country %in% asian_countries_codes, ]
+
+# Tokenize the text data for Asian countries
+bag_of_words_asian <- asian_data %>%
+  unnest_tokens(word, text)
+
+# Count word frequencies
+word_count_asian <- bag_of_words_asian %>%
+  count(word, sort = TRUE)
+
+# Create a word cloud or any other visualization you prefer
+# Here, I'm creating a simple bar plot for the top 15 words
+word_count_asian[1:15,] %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n)) +
+  geom_col(fill = "#3498db") +
+  labs(title = "Word Frequency in Happy Moments for Asian Countries") +
+  xlab(NULL) +
+  ylab("Word Frequency") +
+  coord_flip()
+
+
+
+```
+
+```{r, message=FALSE,echo=FALSE}
+north_american_countries_codes <- c("BHS", "BRB", "CAN", "CRI", "DOM", "JAM", "MEX", "PRI", "TTO", "TCA", "USA", "UMI", "VIR")
+
+# Filter the data for North American countries
+north_american_data <- hm_data_over_65[hm_data_over_65$country %in% north_american_countries_codes, ]
+
+# Tokenize the text data for North American countries
+bag_of_words_north_american <- north_american_data %>%
+  unnest_tokens(word, text)
+
+# Count word frequencies
+word_count_north_american <- bag_of_words_north_american %>%
+  count(word, sort = TRUE)
+
+# Create a word cloud or any other visualization you prefer
+# Here, I'm creating a simple bar plot for the top 15 words
+word_count_north_american[1:15,] %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n)) +
+  geom_col(fill="#2ecc71") +
+  labs(title = "Word Frequency in Happy Moments for North American Countries") +
+  xlab(NULL) +
+  ylab("Word Frequency") +
+  coord_flip()
+```
+Analyzing the word frequency, the top 5 words associated with happiness in North America are "wife," "day," "friend," "time," and "daughter." On the other hand, the top 5 words in Asia include "son," "granddaughter," "feel," "enjoyed," and "summer." It's notable that both regions share words related to family, emphasizing the importance of familial connections in contributing to happiness. However, a notable distinction arises as the word "friend," prominently featured in the big picture word cloud, does not appear in the top 10 for Asia. This discrepancy is likely due to the large proportion of data from North America, causing the big picture to skew towards depicting the situation in North America.
+
+
+
+## Question 3: Do Grandma and Grandpa Differ in Happiness?
+
+Having gained insights into what the elderly prioritize for happiness, I couldn't help but wonder: would there be a difference between grandmothers and grandfathers in terms of what brings them joy? Are there aspects that males consider happiness-inducing but females do not? The following is a pyramid plot illustrating the top 10 words. This plot visually compares word frequencies between females and males over 65, highlighting the top 10 words with the most significant differences. In this section, we utilize data from individuals above 65 across all regions.
+```{r,message=FALSE,echo=FALSE}
+
+library(plotrix)
+library(dplyr)
+female_data_over_65 <- hm_data_over_65[hm_data_over_65$gender == "f", ]
+male_data_over_65 <- hm_data_over_65[hm_data_over_65$gender == "m", ]
+
+# Tokenize the text data for females and males over 65 in Asia
+bag_of_words_female_over_65 <- female_data_over_65 %>%
+  unnest_tokens(word, text)
+
+bag_of_words_male_over_65 <- male_data_over_65 %>%
+  unnest_tokens(word, text)
+
+# Count word frequencies for females and males over 65 in Asia
+word_count_female_over_65 <- bag_of_words_female_over_65 %>%
+  count(word, sort = TRUE)
+
+word_count_male_over_65 <- bag_of_words_male_over_65 %>%
+  count(word, sort = TRUE)
+
+# Assuming both data frames have a 'word' and 'n' column
+word_count_male_over_65 <- word_count_male_over_65 %>%
+  rename(count_male = n) %>%
+  select(word, count_male)
+
+word_count_female_over_65 <- word_count_female_over_65 %>%
+  rename(count_female = n) %>%
+  select(word, count_female)
+
+# Merge data frames
+merged_word_counts <- merge(word_count_male_over_65, word_count_female_over_65, by = "word", all = TRUE)
+
+# Replace missing values with 0
+merged_word_counts[is.na(merged_word_counts)] <- 0
+
+# Calculate the difference
+merged_word_counts$difference <- abs(merged_word_counts$count_male - merged_word_counts$count_female)
+
+top10_diff <- merged_word_counts %>%
+  arrange(desc(difference)) %>%
+  head(12)
+
+# Create the pyramid plot
+pyramid.plot(
+  top10_diff$count_female,
+  top10_diff$count_male,
+  labels = top10_diff$word,
+  top.labels = c("Female", "Words", "Male"),
+  main = "Top 10 Words in Discrepency for Females and Males over 65 in Asia",
+  unit = NULL,
+  gap = 10
+)
+```
+It's not hard to see that the frequency of "husband" and "wife" for male and females has a great difference as people describe their spouse in such a way. Words such as "church," "car," and "golf" ,"home" being more prevalent in expressions of happiness for men indicate specific themes associated with their post-retirement happiness. Females, on the other hand, seem to find happiness in different themes, such as "conversation," "game," and "love." This may suggests that, after retirement, males may derive happiness from activities related to sports, personal interests (like cars), and potentially religious or spiritual engagements. On the other hand, females may find happiness in social interactions, recreational activities, and emotional connections.
+
+\newline
+Now, let's examine the commonalities between males and females among the elderly.
+
+```{r,message=FALSE,echo=FALSE}
+library(wordcloud)
+all1<-paste( female_data_over_65$text,collapse='')
+all2<-paste( male_data_over_65$text,collapse='')
+all<-c(all1,all2)
+all<-VectorSource(all)
+all_corpus<-VCorpus(all)
+all_tdm<-TermDocumentMatrix(all_corpus)
+all_m<-as.matrix(all_tdm)
+commonality.cloud(all_m, colors=c("steelblue","pink","orange"), max.words = 60)
+
+```
+From the common words frequency, we can observe that the most common words for both males and females are "friends," "day," and "found." Following these, the second-appearing terms are depicted in pink, and these include words associated with family. Thus, for grandpas and grandmas, it appears that they unanimously agree on the significance of friends in contributing to their happiness.
+
+## Conclusions
+1.There are differences in happiness across regions. "Friends" is a top word in North America but not in Asia for people over 65.
+2.It seems that males during retirement are more inclined to find happiness from cars, sports, and belief, while females are more inclined to find attachment.
+3.Both females and males agree that friendship is important to happiness.
+
