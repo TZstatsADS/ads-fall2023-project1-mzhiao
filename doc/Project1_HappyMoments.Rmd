@@ -11,10 +11,12 @@ output:
 ---
 
 ![ ](../figs/retire.png)
-\newline
+
+
+
 As the discourse on the mental health of the elderly gains prominence, I delve into the HappyDB dataset to unravel the nuanced elements that contribute to the happiness of elderly individuals during their retirement years. Retirement is a significant life transition, often accompanied by various challenges and opportunities. Understanding the sources of joy during this period can provide valuable insights into the well-being of retired individuals and offer guidance on fostering a happier retirement.This exploration is not merely an academic pursuit; it's a deeply personal quest fueled by a concern for the well-being of my own grandparents.
 
-```{r load libraries, warning=FALSE, message=FALSE}
+```{r load libraries, warning=FALSE, message=FALSE, echo=FALSE}
 library(tm)
 library(tidytext)
 library(tidyverse)
@@ -25,12 +27,12 @@ library(ngram)
 ```
 
 
-```{r read data, warning=FALSE, message=FALSE}
+```{r read data, warning=FALSE, message=FALSE,echo=FALSE}
 urlfile<-'https://raw.githubusercontent.com/rit-public/HappyDB/master/happydb/data/cleaned_hm.csv'
 hm_data <- read_csv(urlfile)
 ```
 
-```{r text processing in tm, warning=FALSE, message=FALSE}
+```{r text processing in tm, warning=FALSE, message=FALSE,echo=FALSE}
 corpus <- VCorpus(VectorSource(hm_data$cleaned_hm))%>%
   tm_map(content_transformer(tolower))%>%
   tm_map(removePunctuation)%>%  
@@ -39,13 +41,13 @@ corpus <- VCorpus(VectorSource(hm_data$cleaned_hm))%>%
   tm_map(stripWhitespace)
 ```
 
-```{r stemming, warning=FALSE, message=FALSE}
+```{r stemming, warning=FALSE, message=FALSE,echo=FALSE}
 stemmed <- tm_map(corpus, stemDocument) %>%
   tidy() %>%
   select(text)
 ```
 
-```{r tidy dictionary, warning=FALSE, message=FALSE}
+```{r tidy dictionary, warning=FALSE, message=FALSE,echo=FALSE}
 dict <- tidy(corpus) %>%
   select(text) %>%
   unnest_tokens(dictionary, text)
@@ -54,7 +56,7 @@ dict <- tidy(corpus) %>%
 
 
 
-```{r stopwords, warning=FALSE, message=FALSE}
+```{r stopwords, warning=FALSE, message=FALSE,echo=FALSE}
 data("stop_words")
 
 word <- c("happy","ago","yesterday","lot","today","months","month",
@@ -65,7 +67,7 @@ stop_words <- stop_words %>%
 ```
 
 
-```{r tidy stems with dictionary, warning=FALSE, message=FALSE}
+```{r tidy stems with dictionary, warning=FALSE, message=FALSE,echo=FALSE}
 completed <- stemmed %>%
   mutate(id = row_number()) %>%
   unnest_tokens(stems, text) %>%
@@ -73,7 +75,7 @@ completed <- stemmed %>%
   anti_join(stop_words, by = c("dictionary" = "word"))
 ```
 
-```{r stem completion, warning=FALSE, message=FALSE}
+```{r stem completion, warning=FALSE, message=FALSE,echo=FALSE}
 completed <- completed %>%
   group_by(stems) %>%
   count(dictionary) %>%
@@ -86,7 +88,7 @@ completed <- completed %>%
 ```
 
 
-```{r reverse unnest, warning=FALSE, message=FALSE}
+```{r reverse unnest, warning=FALSE, message=FALSE,echo=FALSE}
 completed <- completed %>%
   group_by(id) %>%
   summarise(text = str_c(word, collapse = " ")) %>%
@@ -94,7 +96,7 @@ completed <- completed %>%
 ```
 
 
-```{r cleaned hm_data, warning=FALSE, message=FALSE}
+```{r cleaned hm_data, warning=FALSE, message=FALSE,echo=FALSE}
 hm_data <- hm_data %>%
   mutate(id = row_number()) %>%
   inner_join(completed)
@@ -104,7 +106,7 @@ datatable(hm_data)
 
 
 
-```{r export data, warning=FALSE, message=FALSE}
+```{r export data, warning=FALSE, message=FALSE,echo=FALSE}
 write_csv(hm_data, "../output/processed_moments.csv")
 ```
 
@@ -200,7 +202,7 @@ It is evident that terms such as "wife," "day," "friend," "daughter," "son," "ti
 Taking a broader perspective, let's move on to another question: Does the contribution to happiness vary by region? To explore this, we'll begin by examining a pie chart depicting the distribution of continents in the dataset.I split the countries in to five continents as follows:
 
 
-```{r}
+```{r,echo=FALSE,message=FALSE}
 # Asian countries
 asian_countries <- c("AFG", "ARM", "BGD", "IND", "IDN", "IRQ", "ISR", "JPN", "KAZ", "KWT", "MAC", "MYS", "NPL", "PAK", "PHL", "RUS", "SAU", "SGP", "KOR", "LKA", "TWN", "THA", "TUR", "ARE", "VNM")
 
@@ -236,6 +238,9 @@ ggplot(continent_dist, aes(x = "", y = total_count, fill = continent)) +
   labs(title = "Count of Countries in Happy Moments Dataset by Continent")
 
 ```
+
+
+
 The pie chart reveals that the majority of the data originates from North America. Unfortunately, data for regions other than North America and Asia is insufficient for drawing conclusions about their contribution to happiness. Consequently, we'll focus our analysis on comparing Asia and North America based on the available data.
 
 ```{r, message=FALSE,echo=FALSE}
@@ -293,6 +298,9 @@ word_count_north_american[1:15,] %>%
   ylab("Word Frequency") +
   coord_flip()
 ```
+
+
+
 Analyzing the word frequency, the top 5 words associated with happiness in North America are "wife," "day," "friend," "time," and "daughter." On the other hand, the top 5 words in Asia include "son," "granddaughter," "feel," "enjoyed," and "summer." It's notable that both regions share words related to family, emphasizing the importance of familial connections in contributing to happiness. However, a notable distinction arises as the word "friend," prominently featured in the big picture word cloud, does not appear in the top 10 for Asia. This discrepancy is likely due to the large proportion of data from North America, causing the big picture to skew towards depicting the situation in North America.
 
 
@@ -349,14 +357,17 @@ pyramid.plot(
   top10_diff$count_male,
   labels = top10_diff$word,
   top.labels = c("Female", "Words", "Male"),
-  main = "Top 10 Words in Discrepency for Females and Males over 65 in Asia",
+  main = "Top 10 Words of frequency Difference for Females and Males over 65",
   unit = NULL,
   gap = 10
 )
 ```
+
+
+
 It's not hard to see that the frequency of "husband" and "wife" for male and females has a great difference as people describe their spouse in such a way. Words such as "church," "car," and "golf" ,"home" being more prevalent in expressions of happiness for men indicate specific themes associated with their post-retirement happiness. Females, on the other hand, seem to find happiness in different themes, such as "conversation," "game," and "love." This may suggests that, after retirement, males may derive happiness from activities related to sports, personal interests (like cars), and potentially religious or spiritual engagements. On the other hand, females may find happiness in social interactions, recreational activities, and emotional connections.
 
-\newline
+
 Now, let's examine the commonalities between males and females among the elderly.
 
 ```{r,message=FALSE,echo=FALSE}
